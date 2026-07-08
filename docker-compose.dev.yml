@@ -1,0 +1,33 @@
+version: '3.9'
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: iot_platform
+      POSTGRES_USER: iot_user
+      POSTGRES_PASSWORD: change-me
+    ports:
+      - '5433:5432'
+  redis:
+    image: redis:7
+    ports:
+      - '6379:6379'
+  minio:
+    image: minio/minio:RELEASE.2024-10-02T17-50-41Z
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+  emqx:
+    image: emqx/emqx:5.7
+    ports:
+      - '1883:1883'
+      - '18083:18083'
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - '1025:1025'
+      - '8025:8025'

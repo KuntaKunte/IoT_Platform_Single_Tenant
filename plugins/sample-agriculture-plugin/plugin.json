@@ -1,0 +1,6 @@
+{
+  "name": "sample-agriculture-plugin",
+  "version": "1.0.0",
+  "description": "Reference plugin: an irrigation_command rule action and a soil_moisture dashboard widget",
+  "main": "index.js"
+}

@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: iot-platform-backend
+    metrics_path: /metrics
+    static_configs:
+      # The backend runs on the host (npm run dev / npm start), not inside this
+      # compose stack. docker-compose.monitoring.yml's extra_hosts entry makes
+      # host.docker.internal resolve to the host on both Docker Desktop and Linux.
+      - targets: ['host.docker.internal:3000']
