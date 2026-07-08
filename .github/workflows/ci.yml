@@ -39,10 +39,15 @@ jobs:
           - 8025:8025
       # GitHub Actions service containers can't specify a custom `command:` (unlike
       # docker-compose), and the official minio/minio image requires one (`server /data`)
-      # to start. bitnami/minio's image runs a working default without needing one, so
-      # it's used here in CI only — docker-compose.dev.yml keeps the official image.
+      # to start. `edge-cicd` is a tag MinIO itself publishes specifically for this —
+      # its default CMD is already `minio server /data`, no override needed. (A prior
+      # version of this workflow used bitnami/minio for the same reason; Bitnami
+      # migrated all free images to bitnamilegacy/* on 2025-08-28, breaking that pull
+      # entirely — confirmed via the real first CI run after this repo was pushed to
+      # GitHub. edge-cicd is maintained by MinIO directly, not a third party, so it
+      # isn't subject to the same risk.)
       minio:
-        image: bitnami/minio
+        image: minio/minio:edge-cicd
         env:
           MINIO_ROOT_USER: minioadmin
           MINIO_ROOT_PASSWORD: minioadmin
@@ -68,8 +73,8 @@ jobs:
       JWT_SECRET: ci-test-secret
       JWT_REFRESH_SECRET: ci-test-refresh-secret
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -83,8 +88,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm

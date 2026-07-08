@@ -1,8 +1,14 @@
 # Progress Summary
 
-Last updated: 2026-07-08 (end of Phase 14)
+Last updated: 2026-07-08 (end of Phase 14 + a post-push CI fix)
 
-Status: Phases 1-14 implemented and passing their full test suites locally. **Nothing has been committed to git yet** — all work sits as uncommitted changes on `main`. CI workflow has been updated but not yet observed running (no way to trigger GitHub Actions from this environment).
+Status: Phases 1-14 implemented and passing their full test suites locally. The repo has been pushed to GitHub (`github.com/KuntaKunte/IoT_Platform_Single_Tenant`) — the first real CI run surfaced two real, now-fixed issues (see below), moving CI from "reasoned-through but unverified" to "actually observed, root-caused, fixed."
+
+**Real CI failure #1 — `bitnami/minio` pull failing in `ci.yml`'s backend job.** Confirmed by reproducing locally (`docker pull bitnami/minio` → "not found"): Bitnami migrated *all* free Docker Hub images to `bitnamilegacy/*` on 2025-08-28, breaking the `bitnami/minio` workaround `ci.yml` had used since Phase 13 (chosen specifically because GitHub Actions service containers can't override a container's `command:`, and official `minio/minio` needs `server /data` to start). Fixed by switching to `minio/minio:edge-cicd` — a tag MinIO itself publishes for exactly this scenario (its default `CMD` is already `minio server /data`), confirmed locally (`docker run` + a real `/minio/health/live` 200) before changing the workflow. Maintained by MinIO directly, not a reseller, so it isn't exposed to the same third-party-catalog-restructuring risk.
+
+**Real CI warning — Node 20 deprecated on Actions runners.** `actions/checkout@v4`/`actions/setup-node@v4` were being force-run on Node 24 with a deprecation warning (GitHub's Node 20 runner sunset). Bumped to `actions/checkout@v5`/`actions/setup-node@v6` (confirmed via web search to be the current Node-24-native majors) in both `ci.yml` and `release.yml`. The `node-version: 20` input (what Node version *runs the workflow's own steps*, e.g. `npm test`) is unrelated and unchanged — matches this project's actual Node target everywhere else.
+
+These two fixes are **uncommitted** as of this note — everything else in this summary was already pushed in the repo's initial commit before these fixes were made.
 
 ## What this platform is
 
@@ -183,7 +189,7 @@ Backend: **21 test suites, 95 tests, all passing** (re-confirmed after Phase 14'
 ## Not yet done
 
 - No git commits made this session (repo has real, tracked-but-uncommitted changes across all 14 phases plus the git-scoping fix).
-- CI workflow changes (Phase 9 service containers, Phase 13 MinIO addition, Phase 14 release.yml) unverified against a real GitHub Actions run.
+- CI workflow: the backend job's service containers (Phase 9/13) are now verified for real — the repo was pushed and the first real run surfaced two real issues (`bitnami/minio` broken, deprecated action versions), both fixed, see the note at the top of this file. `release.yml` (Phase 14, GHCR image publishing) remains unverified — it only triggers on a `v*` tag push, which hasn't happened yet.
 - Report file archival (MinIO-backed download history) intentionally deferred per Phase 10's scope decision.
 - A second, non-reference plugin (e.g. a real industrial-automation example) — Phase 12 shipped exactly one sample plugin, as scoped.
 - A genuine full-host-loss DR drill and MinIO recovery tooling (Phase 13) — the backup/restore scripts are verified for real, but only via a dump-and-restore-into-a-throwaway-database cycle, not a full simulated disaster.
