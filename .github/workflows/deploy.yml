@@ -1,0 +1,84 @@
+name: Deploy
+
+# Continuous deployment: every merge to main builds fresh backend/frontend
+# images, pushes them to GHCR tagged with the commit SHA (leaving :latest/:vX
+# tags from release.yml alone), then deploys that exact SHA to the home
+# server over Tailscale. See docs/operations/cloud-deployment.md for the
+# one-time setup this depends on (Tailscale OAuth client + ACL tag, deploy
+# SSH key, GitHub secrets).
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      backend_image: ${{ steps.tags.outputs.backend }}
+      frontend_image: ${{ steps.tags.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          base="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          sha_tag="sha-${GITHUB_SHA::12}"
+          echo "backend=${base}-backend:${sha_tag}" >> "$GITHUB_OUTPUT"
+          echo "frontend=${base}-frontend:${sha_tag}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.tags.outputs.backend }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ steps.tags.outputs.frontend }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Join Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Trust the deploy host's SSH key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Install deploy SSH key
+        run: |
+          install -m 600 -D /dev/null ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+
+      - name: Deploy to home server
+        env:
+          BACKEND_IMAGE: ${{ needs.build-and-push.outputs.backend_image }}
+          FRONTEND_IMAGE: ${{ needs.build-and-push.outputs.frontend_image }}
+        run: scripts/deploy.sh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" "${{ vars.DEPLOY_REMOTE_DIR }}"
