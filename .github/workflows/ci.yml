@@ -9,6 +9,7 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:16
@@ -19,7 +20,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U iot_user"
+          --health-cmd "pg_isready -U iot_user -d iot_platform"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -72,6 +73,10 @@ jobs:
       MINIO_BUCKET: iot-platform
       JWT_SECRET: ci-test-secret
       JWT_REFRESH_SECRET: ci-test-refresh-secret
+      # The webhook integration tests POST to a loopback test server, which
+      # assertSafeWebhookUrl() (src/shared/url-safety.js) blocks by default as
+      # SSRF hardening. Only CI needs this relaxed — never set it in production.
+      ALLOW_PRIVATE_WEBHOOK_TARGETS: 'true'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v6
@@ -80,7 +85,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run migrate
-      - run: npm test
+      # --forceExit: a lingering open handle (server/DB/redis connection not closed)
+      # otherwise leaves Jest hanging after all tests finish, until the job's
+      # timeout-minutes above kills it — confirmed via a real CI run that hung ~6h.
+      - run: npm test -- --forceExit
 
   frontend:
     runs-on: ubuntu-latest
