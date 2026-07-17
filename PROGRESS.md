@@ -8,7 +8,9 @@ Status: Phases 1-15 implemented and passing their full test suites locally. The 
 
 **Real CI warning — Node 20 deprecated on Actions runners.** `actions/checkout@v4`/`actions/setup-node@v4` were being force-run on Node 24 with a deprecation warning (GitHub's Node 20 runner sunset). Bumped to `actions/checkout@v5`/`actions/setup-node@v6` (confirmed via web search to be the current Node-24-native majors) in both `ci.yml` and `release.yml`. The `node-version: 20` input (what Node version *runs the workflow's own steps*, e.g. `npm test`) is unrelated and unchanged — matches this project's actual Node target everywhere else.
 
-These two fixes are **uncommitted** as of this note — everything else in this summary was already pushed in the repo's initial commit before these fixes were made.
+These two fixes were committed and pushed (`31a36e7`), as was Phase 15 (`279e392`).
+
+**Post-Phase-15 addition — customer onboarding runbook**: with all charter phases complete, decided the scaling model going forward is **fork-per-customer** (each customer gets their own git fork of this repo, not a shared multi-tenant instance or a single repo with per-customer config folders — a deliberate trade of automatic core-fix propagation for maximum per-customer freedom to hand-edit `src/` when a plugin genuinely isn't enough). Wrote `docs/operations/customer-onboarding.md`: the fork/customize/deploy/tag workflow, and — the part that actually matters for this model's sustainability — the `upstream` remote + `git fetch upstream && merge`/cherry-pick convention for pulling core fixes into existing customer forks, since that doesn't happen automatically. Marking this repo as a GitHub template repository (Settings → General → Template repository) is a manual one-checkbox step for the user — no `gh` CLI or `GITHUB_TOKEN` was available in this environment to do it directly.
 
 ## What this platform is
 
