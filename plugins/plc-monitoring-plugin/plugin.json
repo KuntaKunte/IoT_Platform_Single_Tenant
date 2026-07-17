@@ -1,0 +1,6 @@
+{
+  "name": "plc-monitoring-plugin",
+  "version": "1.0.0",
+  "description": "Phase 15 example: a plc_setpoint_write rule action and a fault_code_grid dashboard widget for industrial PLC monitoring",
+  "main": "index.js"
+}
