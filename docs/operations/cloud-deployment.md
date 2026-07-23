@@ -70,7 +70,26 @@ This SSHes in, runs `docker compose -f docker-compose.prod.yml pull`, then `up -
 
 If you'd rather build directly on the server instead of pulling from GHCR (e.g. for a first deploy before you've set up CI, or if you don't want a registry dependency at all), `docker compose -f docker-compose.prod.yml build` works the same as it does locally — `image:` and `build:` are both set on each service, so Compose can do either.
 
-## 6. Update strategy & rollback
+## 6. Continuous deployment on merge to main (home server behind Tailscale)
+
+`.github/workflows/deploy.yml` runs on every push to `main`: it builds and pushes both images to GHCR tagged with the commit SHA (`ghcr.io/<owner>/<repo>-backend:sha-<12-char-sha>`, leaving `release.yml`'s `:vX`/`:latest` tags untouched), then deploys that exact SHA to the home server by joining your tailnet and running `scripts/deploy.sh` from the runner. This is separate from the tag-based `release.yml` flow — merges to `main` deploy automatically; version tags remain for marking/rolling back to a named release.
+
+This only works once the following one-time setup is done, since none of it can be done from a GitHub Actions run itself:
+
+1. **Tailscale OAuth client** — in the Tailscale admin console, Settings → OAuth clients → Generate, scoped to `devices:core` write. This lets the ephemeral GitHub Actions runner join your tailnet for the duration of the deploy job and leave afterward.
+2. **Tailscale ACL tag** — the runner joins tagged `tag:ci`. Your tailnet's ACL (Access Controls) needs a `tagOwners` entry for `tag:ci` and an `acls` rule permitting `tag:ci` to reach the home server's node (by its own tag or hostname) over SSH (port 22). The default "allow all" ACL already permits this; only custom/locked-down ACLs need an explicit rule added.
+3. **Deploy SSH key** — generate a dedicated keypair (`ssh-keygen -t ed25519 -f deploy_key -N ""`), add the public key to `~/.ssh/authorized_keys` for the account on the home server that owns `/opt/iot-platform` (or whatever `remote-dir` you use), and keep the private key for the next step. Scope that account's `sudo` access to nothing it doesn't need — it only ever runs `docker compose` commands and `curl localhost`.
+4. **GitHub repository secrets** (Settings → Secrets and variables → Actions):
+   - `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` — from step 1
+   - `DEPLOY_SSH_KEY` — the private key from step 3
+   - `DEPLOY_USER` — the account on the home server (e.g. `deploy`)
+   - `DEPLOY_HOST` — the home server's Tailscale MagicDNS name or `100.x.y.z` address, **not** its Cloudflare-proxied public hostname (Cloudflare only proxies HTTP(S); SSH needs the direct Tailscale path)
+   - Optionally, a repository **variable** (not secret) `DEPLOY_REMOTE_DIR` if it's not the default `/opt/iot-platform`
+5. **GHCR pull access on the server** — if this repo's GHCR packages are private (the default for a private repo), the server's Docker needs its own credentials: `docker login ghcr.io -u <github-username> -p <PAT with read:packages>` once, on the host. Public packages need nothing extra.
+
+Until this setup is complete, `deploy.yml` will still run on every merge but fail at the Tailscale or SSH step — harmlessly (nothing on the server is touched until the SSH connection succeeds).
+
+## 7. Update strategy & rollback
 
 Every deploy is a **health-check-gated recreate**: pull the new image, start it, and only remove the old container once the new one reports healthy (`docker compose up -d --wait`). There's a brief window of downtime during the actual container swap — this is *not* a zero-downtime blue-green setup (see `docs/architecture.md`'s Cloud Deployment section for why that's a deliberate scope boundary given this platform's single-instance-per-tenant architecture: every background dispatcher assumes exactly one running instance).
 
@@ -82,12 +101,14 @@ FRONTEND_IMAGE=ghcr.io/<owner>/<repo>-frontend:v1.1.0 \
 scripts/deploy.sh <ssh-host>
 ```
 
+The same works for a bad auto-deploy from `main` — pin `BACKEND_IMAGE`/`FRONTEND_IMAGE` to the previous commit's `sha-<12-char-sha>` tag (visible in the GHCR package's version list, or the `deploy.yml` run before the bad one) instead of a `vX` tag.
+
 ## Secrets management alternatives
 
 This repo deliberately keeps secrets in a `.env` file rather than integrating a specific cloud provider's secret manager (AWS Secrets Manager, Azure Key Vault, GCP Secret Manager) — doing so for one provider and not the others would contradict the infra-agnostic approach this whole deployment path is built around, and building all three isn't warranted without a real account to verify each against. If you're deploying to AWS/Azure/GCP and want to use that platform's native secret store instead, the natural integration point is your process supervisor/orchestration layer injecting the same environment variables `.env` currently provides — the application itself only ever reads `process.env`, so nothing in `src/` needs to change.
 
 ## Per-provider notes
 
-- **Generic VPS / DigitalOcean / Hetzner**: this entire guide, as written, with no changes. Create a Droplet/Cloud Server/VPS, install Docker, follow steps 1-6 above.
+- **Generic VPS / DigitalOcean / Hetzner**: this entire guide, as written, with no changes. Create a Droplet/Cloud Server/VPS, install Docker, follow steps 1-7 above.
 - **AWS EC2 / Azure VM / GCP Compute Engine**: this entire guide, plus platform-specific firewall/security-group rules (open 80/443/1883 the same way you would any other inbound rule) and DNS (point Cloudflare's DNS record at the instance's public IP, same as any other provider).
 - **AWS ECS / Azure Container Apps / Cloud Run** (managed container services, not a VM): a real architectural alternative to everything above — no SSH, no `docker-compose.prod.yml`, a different secrets model per platform, and each platform's own deployment tooling instead of `scripts/deploy.sh`. **Documented here as a future option, not built** — it would mean genuinely different automation per platform (not a config tweak on top of what exists), and this environment has no real cloud account to build and verify any of the three against. The container images this repo already publishes to GHCR (step 4 above) are the right starting point for whoever picks this up.
